@@ -1,0 +1,4 @@
+[functions.create-subscription]
+verify_jwt = true
+[functions.mercadopago-webhook]
+verify_jwt = false
