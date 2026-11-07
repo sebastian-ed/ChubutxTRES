@@ -6,3 +6,6 @@ verify_jwt = false
 
 [functions.manage-subscription]
 verify_jwt = true
+
+[functions.create-one-time-payment]
+verify_jwt = true

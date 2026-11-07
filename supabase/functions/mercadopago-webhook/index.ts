@@ -54,6 +54,43 @@ Deno.serve(async(req)=>{
   if(type==='payment'){
    const p=await mpGet(`/v1/payments/${encodeURIComponent(id)}`,token);
    const paymentId=cleanId(p.id);if(!paymentId)return json({ok:true,ignored:true});
+   // One-time Checkout Pro payment. Never trust the browser redirect: fetch payment directly from MP.
+   // Match a UUID that our server generated, then verify collector preference/amount/currency.
+   const contributionRef=cleanId(p.external_reference);
+   if(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(contributionRef)){
+    const {data:c,error:ce}=await db.from('one_time_contributions').select('id,user_id,amount_ars,mp_preference_id,status,mp_payment_id').eq('id',contributionRef).maybeSingle();
+    if(ce)throw ce;
+    if(c){
+     const correctAmount=Number(p.transaction_amount)===Number(c.amount_ars);
+     const correctCurrency=p.currency_id==='ARS';
+     // p.metadata may contain untrusted custom information; trust only MP's resolved preference ID.
+     let preferenceId=cleanId(p.preference_id);
+     // Classic Checkout Pro often exposes the merchant order ID rather than preference_id on the payment.
+     // Fetch the trusted merchant order from MP to verify preference identity and payment membership.
+     let orderHasPayment=true;
+     if(!preferenceId && p.order?.id){
+      const order=await mpGet(`/merchant_orders/${encodeURIComponent(String(p.order.id))}`,token);
+      preferenceId=cleanId(order.preference_id);
+      orderHasPayment=Array.isArray(order.payments)&&order.payments.some((item:any)=>cleanId(item.id)===paymentId);
+     }
+     const matchingPreference=!!c.mp_preference_id && preferenceId===c.mp_preference_id && orderHasPayment;
+     if(!correctAmount||!correctCurrency||!matchingPreference){
+      console.error('ONE_TIME_PAYMENT_MISMATCH',JSON.stringify({payment_id:paymentId,contribution_id:c.id,correctAmount,correctCurrency,matchingPreference}));
+      return json({error:'El pago no coincide con el aporte original'},422);
+     }
+     const allowed=['approved','pending','in_process','rejected','cancelled','refunded','charged_back'];
+     const status=allowed.includes(String(p.status))?String(p.status):'pending';
+     // Do not downgrade final payments from delayed, out-of-order notifications.
+     const updated=c.status==='approved' && status==='pending'?'approved':status;
+     const {error:updateErr}=await db.from('one_time_contributions').update({status:updated,mp_payment_id:paymentId,
+      paid_at:updated==='approved'?(p.date_approved||new Date().toISOString()):null,updated_at:new Date().toISOString()}).eq('id',c.id).or(`mp_payment_id.is.null,mp_payment_id.eq.${paymentId}`);
+     if(updateErr)throw updateErr;
+     const {error:evErr}=await db.from('provider_events').upsert({membership_id:null,event_type:'one_time_payment',mp_resource_id:paymentId,
+      payload:{contribution_id:c.id,status:updated,amount:p.transaction_amount,currency:p.currency_id,linked:true}},{onConflict:'event_type,mp_resource_id'});
+     if(evErr)throw evErr;
+     return json({ok:true,kind:'one_time_contribution',status:updated});
+    }
+   }
    let memberId:string|null=null;let invoiceId:string|null=null;
    // Best evidence: an invoice explicitly tied to this payment.
    const {data:known,error:kerr}=await db.from('subscription_invoices').select('id,membership_id').eq('mp_payment_id',paymentId).maybeSingle();if(kerr)throw kerr;

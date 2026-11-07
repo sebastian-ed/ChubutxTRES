@@ -24,3 +24,8 @@ Abrí **INSTALACION_PASO_A_PASO.md**. Empezá con la migración SQL y las tres f
 No se puede garantizar un cobro real ni certificar el circuito completo sin ejecutar una prueba controlada contra tu cuenta. La aplicación no guarda números de tarjeta, CVV ni Access Tokens en el navegador. El checkout se realiza en Mercado Pago.
 
 Documentación: [Suscripciones sin plan](https://www.mercadopago.com.ar/developers/es/docs/subscriptions/integration-configuration/subscription-no-associated-plan/pending-payments), [Webhooks](https://www.mercadopago.com.ar/developers/es/docs/subscriptions/additional-content/your-integrations/notifications/introduction), [Funciones Supabase](https://supabase.com/docs/guides/functions/auth).
+
+
+## V4: aportes únicos y suscripciones
+
+La actualización V4 agrega aportes únicos con Checkout Pro, sin modificar el CSS ni las categorías de membresías. Seguí `INSTALACION_APORTES_V4.md`.
