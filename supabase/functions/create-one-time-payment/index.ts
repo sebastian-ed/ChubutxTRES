@@ -17,17 +17,23 @@ Deno.serve(async req=>{
  if(authError||!user||!emailOk(user.email))return reply({error:'Iniciá sesión con un correo verificado'},401);
  let body:Record<string,unknown>;try{body=await req.json()}catch{return reply({error:'Solicitud inválida'},400)}
  // 1 ARS allowed as test; provider may enforce a higher minimum for some payment methods.
- const amount=body.amount_ars;
+ let amount:unknown=body.amount_ars;let categoryId:string|null=null;let categoryName:string|null=null;
+ if(body.category_id!==undefined){
+  if(typeof body.category_id!=='string'||!/^[0-9a-f-]{36}$/i.test(body.category_id))return reply({error:'Categoría inválida'},400);
+  const {data:cat,error:catError}=await db.from('membership_categories').select('id,name,one_time_price_ars').eq('id',body.category_id).eq('active',true).maybeSingle();
+  if(catError||!cat||!Number.isSafeInteger(cat.one_time_price_ars)||cat.one_time_price_ars<1)return reply({error:'La categoría no tiene aporte único habilitado'},400);
+  categoryId=cat.id;categoryName=cat.name;amount=cat.one_time_price_ars; // Precio SIEMPRE obtenido del servidor, nunca del navegador.
+ }
  if(typeof amount!=='number'||!Number.isSafeInteger(amount)||amount<1||amount>100000000)return reply({error:'El aporte debe ser un importe entero entre $1 y $100.000.000'},400);
  const {data:profile,error:profileError}=await db.from('profiles').select('organization,full_name').eq('id',user.id).maybeSingle();
  if(profileError||!profile?.organization?.trim())return reply({error:'Completá y guardá la razón social antes de aportar'},400);
- const {data:contribution,error:insertError}=await db.from('one_time_contributions').insert({user_id:user.id,amount_ars:amount,status:'creating'}).select('id').single();
+ const {data:contribution,error:insertError}=await db.from('one_time_contributions').insert({user_id:user.id,amount_ars:amount,category_id:categoryId,status:'creating'}).select('id').single();
  if(insertError||!contribution)return reply({error:'No fue posible registrar el aporte'},500);
  const base=site.replace(/\/$/,'');
- const preference={items:[{id:'aporte-chubutxtres',title:'Aporte único a ChubutxTRES',quantity:1,currency_id:'ARS',unit_price:amount}],
+ const preference={items:[{id:'aporte-chubutxtres',title:categoryName?`Aporte único ChubutxTRES — ${categoryName}`:'Aporte único a ChubutxTRES',quantity:1,currency_id:'ARS',unit_price:amount}],
   external_reference:contribution.id,payer:{email:user.email},
   back_urls:{success:base+'/#/aporte/retorno',pending:base+'/#/aporte/retorno',failure:base+'/#/aporte/retorno'},
-  auto_return:'approved',metadata:{source:'chubutxtres',kind:'one_time_contribution',contribution_id:contribution.id}};
+  auto_return:'approved',metadata:{source:'chubutxtres',kind:'one_time_contribution',contribution_id:contribution.id,category_id:categoryId||undefined}};
  try{
   const response=await fetch('https://api.mercadopago.com/checkout/preferences',{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json','X-Idempotency-Key':contribution.id},body:JSON.stringify(preference),signal:AbortSignal.timeout(18000)});
   const text=await response.text();let data:Record<string,any>={};try{data=JSON.parse(text)}catch{}
@@ -38,6 +44,6 @@ Deno.serve(async req=>{
   }
   const {error:saveError}=await db.from('one_time_contributions').update({status:'pending',mp_preference_id:String(data.id),mp_init_point:String(data.init_point),updated_at:new Date().toISOString()}).eq('id',contribution.id);
   if(saveError){console.error('MP_ONE_TIME_DB_SAVE_FAILED',contribution.id);return reply({error:'El proveedor creó el checkout, pero falló el registro. No repitas el aporte; avisá a administración.'},500)}
-  return reply({init_point:String(data.init_point),contribution_id:contribution.id});
+  return reply({init_point:String(data.init_point),contribution_id:contribution.id,category_id:categoryId||undefined});
  }catch(e){console.error('MP_ONE_TIME_NETWORK_ERROR',e instanceof Error?e.message:'unknown');return reply({error:'No podemos confirmar la operación; consultá a administración antes de reintentar'},504)}
 });

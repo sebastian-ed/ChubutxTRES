@@ -45,7 +45,7 @@ Deno.serve(async(req)=>{
   if(!response.ok || !data?.id || !data?.init_point){
    console.error('MP_PREAPPROVAL_REJECTED',JSON.stringify({status:response.status,code:data?.error||data?.code||null,description:String(data?.message||'').slice(0,300)}));
    await db.from('memberships').update({status:'error'}).eq('id',member.id);
-   return reply({error:'Mercado Pago rechazó la suscripción. Revisá el registro MP_PREAPPROVAL_REJECTED en Supabase.',provider_status:response.status},502);
+   return reply({error:'Mercado Pago rechazó la suscripción. Revisá el registro MP_PREAPPROVAL_REJECTED en Supabase.',provider_status:response.status,provider_message: String(data?.message||'').slice(0,180)},502);
   }
   const {error:saveError}=await db.from('memberships').update({status:'pending',mp_preapproval_id:String(data.id),mp_init_point:String(data.init_point),last_provider_update:new Date().toISOString()}).eq('id',member.id);
   if(saveError){console.error('MP_CREATED_DB_SAVE_FAILED',JSON.stringify({membership_id:member.id,mp_preapproval_id:String(data.id)}));return reply({error:'Mercado Pago creó una suscripción pero falló su registro local. No repitas el pago; contactá a administración.'},500)}

@@ -29,3 +29,7 @@ Documentación: [Suscripciones sin plan](https://www.mercadopago.com.ar/develope
 ## V4: aportes únicos y suscripciones
 
 La actualización V4 agrega aportes únicos con Checkout Pro, sin modificar el CSS ni las categorías de membresías. Seguí `INSTALACION_APORTES_V4.md`.
+
+
+## V5
+Ver `INSTALACION_V5.md` para cuotas y aportes únicos por categoría administrables.
